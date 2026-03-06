@@ -1,0 +1,1625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Diamond in the Rough</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&display=swap');
+  :root{
+    --gold:#ffd700;--border-gold:#c8a400;
+    --ruby:#e8003d;--diamond:#a8efff;
+    --hud-bg:rgba(8,5,0,0.95);
+    --ctrl-bg:rgba(8,5,0,0.72);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+
+  html,body{
+    width:100%;height:100%;
+    background:#080500;
+    font-family:'Press Start 2P',monospace;
+    overflow:hidden;touch-action:none;
+  }
+
+  /* ── Full-screen game shell ── */
+  #shell{
+    position:fixed;inset:0;
+    display:flex;flex-direction:column;
+  }
+
+  /* ── HUD strip at top ── */
+  #hud{
+    flex-shrink:0;
+    background:var(--hud-bg);
+    border-bottom:2px solid var(--border-gold);
+    padding:5px 10px;
+    display:flex;justify-content:space-between;align-items:center;
+    z-index:10;
+  }
+  .hud-item{display:flex;flex-direction:column;align-items:center;gap:2px;}
+  .hud-label{font-size:5px;color:#8a7040;letter-spacing:1px;}
+  .hud-val{font-size:11px;color:var(--gold);text-shadow:0 0 8px rgba(255,215,0,0.6);}
+  .hud-val.cuts{color:#7fff7f;}
+  .hud-val.rubies{color:var(--ruby);}
+  .hud-val.round{color:#ffaa30;font-size:12px;}
+  .cuts-bar{width:44px;height:4px;background:#111;border:1px solid #3a3010;border-radius:2px;overflow:hidden;}
+  .cuts-fill{height:100%;background:linear-gradient(90deg,#1a7a1a,#5ecf5e);transition:width 0.25s;border-radius:2px;}
+  .cuts-fill.low{background:linear-gradient(90deg,#7a1a1a,#cf5e5e);}
+
+  /* ── Title strip under HUD ── */
+  #title-bar{
+    flex-shrink:0;
+    text-align:center;font-size:7px;
+    color:var(--diamond);
+    text-shadow:0 0 12px rgba(168,239,255,0.7);
+    letter-spacing:2px;padding:2px 0;
+    background:rgba(0,0,0,0.5);
+    z-index:10;
+  }
+
+  /* ── Canvas container fills remaining space ── */
+  #canvas-wrap{
+    flex:1;position:relative;overflow:hidden;
+    display:flex;align-items:flex-start;justify-content:center;
+  }
+
+  #game-canvas{
+    image-rendering:pixelated;
+    border:2px solid var(--border-gold);
+    box-shadow:0 0 0 1px #3a2800,0 0 24px rgba(255,180,0,0.12);
+    touch-action:none;display:block;
+    /* canvas is sized dynamically to fill canvas-wrap */
+    max-width:100%;max-height:100%;
+  }
+
+  /* ── Message bar — floats over canvas bottom center ── */
+  #msg-log{
+    position:absolute;
+    bottom:130px;   /* sits above the controls */
+    left:50%;transform:translateX(-50%);
+    width:52%;min-width:150px;max-width:260px;
+    background:rgba(8,5,0,0.78);
+    border:1px solid #3a2800;border-radius:5px;
+    padding:3px 6px;
+    font-family:'VT323',monospace;font-size:12px;
+    color:#d4b060;text-align:center;
+    pointer-events:none;z-index:20;
+    line-height:1.2;
+  }
+
+  /* ── D-pad — bottom LEFT corner over canvas ── */
+  #dpad{
+    position:absolute;bottom:10px;left:10px;
+    display:grid;
+    grid-template-columns:repeat(3,48px);
+    grid-template-rows:repeat(3,48px);
+    gap:3px;
+    z-index:20;
+  }
+  .dpad-btn{
+    background:var(--ctrl-bg);
+    border:2px solid rgba(200,164,0,0.7);
+    border-radius:6px;color:var(--gold);font-size:18px;
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    user-select:none;-webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+    transition:background 0.08s,transform 0.06s;
+    backdrop-filter:blur(4px);
+  }
+  .dpad-btn:active,.dpad-btn.pressed{
+    background:rgba(80,50,0,0.92);transform:scale(0.88);
+    border-color:var(--gold);
+  }
+  .dpad-center{
+    background:rgba(8,5,0,0.3);border:2px solid rgba(60,40,0,0.4);border-radius:8px;
+  }
+
+  /* ── CUT button — bottom RIGHT corner over canvas ── */
+  #cut-btn{
+    position:absolute;bottom:14px;right:12px;
+    width:82px;height:82px;border-radius:50%;
+    background:radial-gradient(circle at 38% 35%,#e8eef4,#a8b4c0 55%,#6a7880);
+    border:3px solid rgba(220,230,240,0.9);
+    color:#111;
+    font-family:'Press Start 2P',monospace;font-size:7px;
+    cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
+    box-shadow:0 0 18px rgba(180,210,255,0.45),inset 0 2px 8px rgba(255,255,255,0.5);
+    transition:transform 0.07s,box-shadow 0.07s;
+    text-shadow:none;
+    backdrop-filter:blur(4px);
+    z-index:20;
+  }
+  #cut-btn:active,#cut-btn.pressed{
+    transform:scale(0.86);
+    box-shadow:0 0 6px rgba(180,210,255,0.25);
+    background:radial-gradient(circle at 38% 35%,#c8d4dc,#8898a8 55%,#4a5860);
+  }
+  #cut-btn .ci{font-size:22px;line-height:1;color:#222;}
+
+  /* ── Overlay ── */
+  #overlay{
+    position:fixed;inset:0;background:rgba(0,0,0,0.78);
+    display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    z-index:100;gap:14px;padding:20px;
+  }
+  #overlay.hidden{display:none;}
+  .ot{font-size:11px;color:var(--diamond);text-shadow:0 0 22px rgba(168,239,255,0.9);text-align:center;line-height:1.8;letter-spacing:1px;}
+  .ot2{font-size:18px;color:var(--gold);text-shadow:0 0 16px rgba(255,215,0,0.8);text-align:center;line-height:1.7;}
+  .os{font-family:'VT323',monospace;font-size:20px;color:#a09060;text-align:center;line-height:1.6;}
+  .ostat{font-family:'VT323',monospace;font-size:22px;color:#c0a040;text-align:center;line-height:2;}
+  #play-btn{
+    background:linear-gradient(180deg,#4a3000,#2a1800);
+    border:2px solid var(--border-gold);color:var(--gold);
+    font-family:'Press Start 2P',monospace;font-size:10px;
+    padding:13px 26px;cursor:pointer;border-radius:4px;
+    transition:all 0.15s;box-shadow:0 0 20px rgba(255,180,0,0.2);
+  }
+  #play-btn:hover{background:linear-gradient(180deg,#6a4a00,#3a2800);transform:scale(1.04);}
+  /* ── Sound toggle button — top right of canvas ── */
+  #sound-btn{
+    width:30px;height:30px;border-radius:50%;
+    background:rgba(30,18,0,0.7);
+    border:1px solid rgba(200,164,0,0.5);
+    color:var(--gold);font-size:14px;
+    cursor:pointer;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    user-select:none;-webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+    transition:background 0.1s,transform 0.08s;
+  }
+  #sound-btn:active{transform:scale(0.88);}
+  #sound-btn.muted{color:#444;border-color:rgba(100,80,0,0.3);}
+
+  /* ── Leaderboard ── */
+  #lb-panel{
+    width:100%;max-width:340px;
+    background:rgba(8,5,0,0.97);
+    border:2px solid var(--border-gold);
+    border-radius:8px;
+    padding:12px 14px;
+  }
+  #lb-panel h2{
+    font-size:9px;color:var(--gold);
+    text-align:center;margin-bottom:10px;
+    text-shadow:0 0 10px rgba(255,215,0,0.6);
+    letter-spacing:1px;
+  }
+  .lb-row{
+    display:flex;align-items:center;
+    gap:8px;padding:4px 0;
+    border-bottom:1px solid rgba(255,215,0,0.08);
+    font-family:'VT323',monospace;font-size:17px;
+  }
+  .lb-row:last-child{border-bottom:none;}
+  .lb-rank{width:22px;color:#8a7040;font-size:14px;text-align:right;flex-shrink:0;}
+  .lb-rank.gold{color:#ffd700;}
+  .lb-rank.silver{color:#c0c8d0;}
+  .lb-rank.bronze{color:#cd7f32;}
+  .lb-name{flex:1;color:#d4b060;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .lb-diamonds{color:var(--diamond);white-space:nowrap;}
+  .lb-empty{font-family:'VT323',monospace;font-size:16px;color:#4a3820;text-align:center;padding:8px 0;}
+  #lb-name-form{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%;max-width:300px;}
+  #lb-name-input{
+    width:100%;padding:8px 10px;
+    background:#0e0a00;border:2px solid var(--border-gold);
+    border-radius:4px;color:var(--gold);
+    font-family:'Press Start 2P',monospace;font-size:9px;
+    outline:none;text-align:center;
+  }
+  #lb-name-input::placeholder{color:#4a3820;}
+  #lb-submit-btn{
+    background:linear-gradient(180deg,#4a3000,#2a1800);
+    border:2px solid var(--border-gold);color:var(--gold);
+    font-family:'Press Start 2P',monospace;font-size:8px;
+    padding:9px 18px;cursor:pointer;border-radius:4px;
+    transition:all 0.15s;
+  }
+  #lb-submit-btn:hover{background:linear-gradient(180deg,#6a4a00,#3a2800);}
+  .lb-tabs{display:flex;gap:6px;margin-bottom:10px;}
+  .lb-tab{
+    flex:1;padding:5px;text-align:center;cursor:pointer;
+    font-family:'Press Start 2P',monospace;font-size:7px;
+    border:1px solid #3a2800;border-radius:4px;color:#8a7040;
+    background:rgba(0,0,0,0.3);transition:all 0.1s;
+  }
+  .lb-tab.active{border-color:var(--border-gold);color:var(--gold);background:rgba(60,40,0,0.5);}
+
+  /* ── Animated start-screen background ── */
+  #bg-canvas{
+    position:fixed;inset:0;z-index:99;
+    pointer-events:none;
+    opacity:1;transition:opacity 0.4s;
+  }
+  #bg-canvas.hidden{opacity:0;}
+
+  @keyframes upgradeFade{
+    0%{background:rgba(180,200,220,0.55);}
+    30%{background:rgba(160,185,210,0.40);}
+    100%{background:rgba(160,185,210,0.0);}
+  }
+  @keyframes upgradeFadeGold{
+    0%{background:rgba(200,160,20,0.60);}
+    30%{background:rgba(180,140,10,0.45);}
+    100%{background:rgba(180,140,10,0.0);}
+  }
+  @keyframes upgradeScale{
+    0%{transform:scale(0.5);opacity:0;}
+    60%{transform:scale(1.1);}
+    100%{transform:scale(1.0);opacity:1;}
+  }
+</style>
+  <!-- Firebase — replace with your config -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, get, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+    // ── REPLACE THIS WITH YOUR FIREBASE CONFIG ──
+    const firebaseConfig = {
+      apiKey:            "AIzaSyDVy3kq7qMJC4XF6Zt-74--aM7mG0gBTm8",
+      authDomain:        "diamond-in-the-rough-26c9a.firebaseapp.com",
+      databaseURL:       "https://diamond-in-the-rough-26c9a-default-rtdb.firebaseio.com",
+      projectId:         "diamond-in-the-rough-26c9a",
+      storageBucket:     "diamond-in-the-rough-26c9a.firebasestorage.app",
+      messagingSenderId: "602381037112",
+      appId:             "1:602381037112:web:0bb6425ca3af668785c0cd",
+      measurementId:     "G-LTNHRVFQJD"
+    };
+
+    const app  = initializeApp(firebaseConfig);
+    const db   = getDatabase(app);
+    const auth = getAuth(app);
+
+    signInAnonymously(auth).catch(console.error);
+
+    // ── Read top 10 ──────────────────────────────────────────────────────
+    async function getLeaderboard(){
+      try {
+        const snap = await get(ref(db,'leaderboard'));
+        if(!snap.exists()) return [];
+        return Object.values(snap.val()).sort((a,b)=>b.diamonds-a.diamonds).slice(0,10);
+      } catch(e){ return []; }
+    }
+
+    // ── Write if player qualifies ─────────────────────────────────────────
+    async function trySubmitScore(name, diamondCount){
+      const entries = await getLeaderboard();
+      const qualifies = entries.length < 10 || diamondCount > entries[entries.length-1].diamonds;
+      if(!qualifies) return false;
+
+      // Build new top 10
+      const uid = auth.currentUser?.uid || ('anon_'+Date.now());
+      const newEntry = { name: name.trim().slice(0,16), diamonds: diamondCount, timestamp: Date.now() };
+
+      // Remove existing entry by this uid if present
+      const all = entries.filter(e=>e.uid!==uid);
+      all.push({...newEntry, uid});
+      all.sort((a,b)=>b.diamonds-a.diamonds);
+      const top10 = all.slice(0,10);
+
+      // Write all 10 slots atomically
+      const updates = {};
+      top10.forEach((e,i)=>{ updates[`leaderboard/entry_${i}`]=e; });
+      // Clear slots that no longer exist
+      for(let i=top10.length;i<10;i++) updates[`leaderboard/entry_${i}`]=null;
+
+      try {
+        for(const [k,v] of Object.entries(updates)){
+          if(v===null) await remove(ref(db,k));
+          else await set(ref(db,k),v);
+        }
+        return true;
+      } catch(e){ console.error(e); return false; }
+    }
+
+    // Expose to global scope for game code
+    window._lb = { getLeaderboard, trySubmitScore };
+  </script>
+</head>
+<body>
+
+<div id="overlay">
+  <div class="ot">💎 DIAMOND IN THE ROUGH 💎</div>
+  <div class="os">Move with d-pad. Tap ⚔ CUT to slash 9 tiles!<br>Walk onto revealed items to collect.</div>
+  <div class="os" style="font-size:14px;color:#706040;line-height:1.8;">
+    💎 Find the 1 diamond to advance<br>
+    🔴 26 rubies in round 1 — collect for +1 cut<br>
+    Start with 30 cuts — stack them up!<br>
+    ⚔ Scythe upgrades: 5×5 at round 4, 7×7 at round 8!
+  </div>
+  <button id="play-btn" onclick="startGame(1)">▶ START</button>
+</div>
+
+<canvas id="bg-canvas"></canvas>
+
+<div id="shell">
+  <div id="hud">
+    <div class="hud-item">
+      <div class="hud-label">CUTS REMAINING</div>
+      <div class="hud-val cuts" id="cuts-val">30</div>
+      <div class="cuts-bar"><div class="cuts-fill" id="cuts-bar-fill" style="width:100%"></div></div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-label">ROUND</div>
+      <div class="hud-val round" id="round-val">1</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-label">RUBIES</div>
+      <div class="hud-val rubies" id="ruby-val">0</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-label">DIAMONDS</div>
+      <div class="hud-val" style="color:var(--diamond)" id="diamond-val">0</div>
+    </div>
+    <button id="sound-btn" title="Toggle sound">🔊</button>
+  </div>
+  <div id="title-bar">💎 DIAMOND IN THE ROUGH 💎</div>
+
+  <div id="canvas-wrap">
+    <canvas id="game-canvas"></canvas>
+    <div id="msg-log">Find the diamond hidden in the tall grass! 💎</div>
+
+    <!-- D-pad bottom left -->
+    <div id="dpad">
+      <div></div>
+      <div class="dpad-btn" data-dir="up">▲</div>
+      <div></div>
+      <div class="dpad-btn" data-dir="left">◀</div>
+      <div class="dpad-center"></div>
+      <div class="dpad-btn" data-dir="right">▶</div>
+      <div></div>
+      <div class="dpad-btn" data-dir="down">▼</div>
+      <div></div>
+    </div>
+
+    <!-- CUT button bottom right -->
+    <button id="cut-btn">
+      <span class="ci">⚔</span>
+      <span>CUT</span>
+    </button>
+  </div>
+</div>
+
+<script>
+const canvas=document.getElementById('game-canvas');
+const ctx=canvas.getContext('2d');
+
+function getGridSize(){
+  const wrap=document.getElementById('canvas-wrap');
+  const aw=wrap?wrap.clientWidth:window.innerWidth;
+  const ah=wrap?wrap.clientHeight:window.innerHeight;
+  const cols=15,rows=18;
+  // tile size driven by width for portrait
+  const ts=Math.floor(aw/cols);
+  return{cols,rows,ts,w:cols*ts,h:rows*ts};
+}
+let COLS,ROWS,T;
+
+const TALL=0,CUT_CELL=1;
+const NONE=0,RUBY=1,DIAMOND=2;
+
+let grid=[],player={x:0,y:0,facing:'down'};
+let cuts,maxCuts,rubies,diamonds,round;
+let gameActive=false,tick=0;
+let particles=[],swingAnim=null,sweepFlash=0,sweepRadius=1;
+
+// ---- GRID ----
+function makeBlades(){
+  const b=[];
+  for(let i=0;i<14;i++){
+    b.push({
+      ox:-0.50+i*0.078+(Math.random()-0.5)*0.04,
+      h:0.90+Math.random()*0.35,   // tall — 90–125% tile height
+      sway:Math.random()*Math.PI*2,
+      spd:0.18+Math.random()*0.28,
+      w:0.082+Math.random()*0.055,
+      tilt:(Math.random()-0.5)*0.16,
+      shade:Math.floor(Math.random()*4)
+    });
+  }
+  return b;
+}
+
+function initGrid(){
+  grid=[];
+  const total=COLS*ROWS;
+  const idx=Array.from({length:total},(_,i)=>i);
+  for(let i=idx.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[idx[i],idx[j]]=[idx[j],idx[i]];}
+  const dIdx=idx[0];
+  const rubyCurve=[26,22,18,15,12,8,5,3,2];
+  const rubyCount=Math.max(2,rubyCurve[Math.min(round-1,rubyCurve.length-1)]);
+  const rSet=new Set(idx.slice(1,1+rubyCount));
+
+  for(let y=0;y<ROWS;y++){
+    grid[y]=[];
+    for(let x=0;x<COLS;x++){
+      const flat=y*COLS+x;
+      let item=NONE;
+      if(flat===dIdx) item=DIAMOND;
+      else if(rSet.has(flat)) item=RUBY;
+      grid[y][x]={type:TALL,item,blades:makeBlades()};
+    }
+  }
+  player.x=Math.floor(COLS/2);
+  player.y=Math.floor(ROWS/2);
+  player.facing='down';
+  // Player starts IN the tall grass — no pre-clearing
+}
+
+// ---- GRASS COLORS ----
+const GC=[
+  ['#143d12','#1f6e1c','#2a9e26'],
+  ['#175215','#22801f','#2eb829'],
+  ['#1a5c17','#289022','#36cc2e'],
+  ['#1d6619','#2ea025','#40dc34'],
+];
+
+// ---- RENDER ----
+// The trick: draw ground → draw player BODY (below grass) → draw grass → draw player HEAD+SCYTHE (above grass)
+function drawAll(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) drawGround(x,y);
+  // Draw revealed items on cut ground
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) drawGroundItem(x,y);
+  // Player body BEHIND grass
+  drawPlayerBody();
+  // Grass on top — covers player's body but NOT head/scythe
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++)
+    if(grid[y][x].type===TALL) drawGrassTile(x,y);
+  // Sweep flash
+  if(sweepFlash>0){
+    const a=sweepFlash/12;
+    ctx.save();
+    ctx.globalAlpha=a*0.5;
+    ctx.strokeStyle='#ffffa0';
+    ctx.lineWidth=T*0.32;
+    ctx.beginPath();
+    const fr=sweepRadius===3?T*3.7:sweepRadius===2?T*2.6:T*1.52;
+    ctx.arc(player.x*T+T/2,player.y*T+T/2,fr,0,Math.PI*2);
+    ctx.stroke();
+    ctx.globalAlpha=a*0.18;
+    ctx.fillStyle='#c8ff80';
+    ctx.beginPath();
+    ctx.arc(player.x*T+T/2,player.y*T+T/2,fr*1.15,0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+    sweepFlash--;
+  }
+  // Player HEAD + SCYTHE drawn ABOVE grass layer
+  drawPlayerAbove();
+  drawParticles();
+  updateHUD();
+}
+
+function drawGround(x,y){
+  const px=x*T,py=y*T;
+  if(grid[y][x].type===CUT_CELL){
+    const dk=(x+y)%2===0;
+    ctx.fillStyle=dk?'#2d6e22':'#357a28';
+    ctx.fillRect(px,py,T,T);
+    ctx.fillStyle=dk?'#235518':'#29601e';
+    ctx.fillRect(px+3,py+5,2,2);
+    ctx.fillRect(px+T-6,py+T-6,2,2);
+    ctx.fillRect(px+Math.floor(T/2),py+3,2,2);
+  } else {
+    ctx.fillStyle='#0b0908';
+    ctx.fillRect(px,py,T,T);
+  }
+}
+
+// Draw ruby glinting on cut ground (visible for player to walk to)
+function drawGroundItem(x,y){
+  const cell=grid[y][x];
+  if(cell.type!==CUT_CELL||cell.item===NONE) return;
+  const px=x*T+T/2, py=y*T+T/2;
+  const pulse=0.85+Math.sin(tick*0.12)*0.15;
+  ctx.save();
+  ctx.translate(px,py);
+  ctx.scale(pulse,pulse);
+  if(cell.item===RUBY){
+    // Ruby gem shape
+    ctx.fillStyle='#ff0040';
+    ctx.beginPath();
+    ctx.moveTo(0,-T*0.20);
+    ctx.lineTo(T*0.16,-T*0.05);
+    ctx.lineTo(T*0.10,T*0.18);
+    ctx.lineTo(-T*0.10,T*0.18);
+    ctx.lineTo(-T*0.16,-T*0.05);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle='#ff80a0';
+    ctx.beginPath();
+    ctx.moveTo(0,-T*0.18);
+    ctx.lineTo(T*0.06,-T*0.04);
+    ctx.lineTo(0,T*0.04);
+    ctx.lineTo(-T*0.06,-T*0.04);
+    ctx.closePath();
+    ctx.fill();
+    // Glow
+    ctx.globalAlpha=0.3*pulse;
+    ctx.fillStyle='#ff0060';
+    ctx.beginPath();
+    ctx.arc(0,0,T*0.22,0,Math.PI*2);
+    ctx.fill();
+  } else if(cell.item===DIAMOND){
+    // Diamond shape
+    ctx.fillStyle='#88ddff';
+    ctx.beginPath();
+    ctx.moveTo(0,-T*0.22);
+    ctx.lineTo(T*0.18,-T*0.04);
+    ctx.lineTo(0,T*0.20);
+    ctx.lineTo(-T*0.18,-T*0.04);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle='#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(0,-T*0.20);
+    ctx.lineTo(T*0.07,-T*0.03);
+    ctx.lineTo(0,T*0.04);
+    ctx.lineTo(-T*0.07,-T*0.03);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha=0.35*pulse;
+    ctx.fillStyle='#a8efff';
+    ctx.beginPath();
+    ctx.arc(0,0,T*0.28,0,Math.PI*2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawGrassTile(x,y){
+  const cell=grid[y][x];
+  const px=x*T,py=y*T;
+  const baseY=py+T;
+
+  // Solid base fill — no gaps between tiles
+  ctx.fillStyle='#163d13';
+  ctx.fillRect(px,py+Math.floor(T*0.28),T,Math.ceil(T*0.72)+2);
+  ctx.fillStyle='#0e280c';
+  ctx.fillRect(px,py,T,Math.floor(T*0.32));
+
+  cell.blades.forEach(b=>{
+    const sw=Math.sin(tick*b.spd*0.030+b.sway)*0.08+b.tilt;
+    const bx=px+(b.ox+0.5)*T;
+    const bh=b.h*T;
+    const bw=b.w*T;
+    const cols=GC[b.shade];
+
+    ctx.fillStyle='rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.moveTo(bx-bw*0.55,baseY);
+    ctx.quadraticCurveTo(bx+sw*bh*0.4,baseY-bh*0.5,bx+sw*bh+bw*0.3,baseY-bh);
+    ctx.quadraticCurveTo(bx+sw*bh*0.4+bw*0.4,baseY-bh*0.5,bx+bw*0.65,baseY);
+    ctx.fill();
+
+    ctx.fillStyle=cols[1];
+    ctx.beginPath();
+    ctx.moveTo(bx-bw*0.55,baseY);
+    ctx.quadraticCurveTo(bx+sw*bh*0.38-bw*0.1,baseY-bh*0.5,bx+sw*bh,baseY-bh);
+    ctx.quadraticCurveTo(bx+sw*bh*0.38+bw*0.22,baseY-bh*0.5,bx+bw*0.55,baseY);
+    ctx.fill();
+
+    ctx.fillStyle=cols[2];
+    ctx.beginPath();
+    ctx.moveTo(bx-bw*0.08,baseY);
+    ctx.quadraticCurveTo(bx+sw*bh*0.35,baseY-bh*0.52,bx+sw*bh,baseY-bh);
+    ctx.lineTo(bx+sw*bh-bw*0.12,baseY-bh+3);
+    ctx.quadraticCurveTo(bx+sw*bh*0.30,baseY-bh*0.46,bx+bw*0.10,baseY);
+    ctx.fill();
+
+    ctx.fillStyle=cols[0];
+    ctx.fillRect(bx-bw*0.60,baseY-T*0.32,bw*1.20,T*0.32);
+  });
+
+  const grd=ctx.createLinearGradient(0,py,0,py+T*0.18);
+  grd.addColorStop(0,'rgba(0,0,0,0.58)');
+  grd.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=grd;
+  ctx.fillRect(px,py,T,T*0.18);
+  ctx.fillStyle='rgba(0,0,0,0.22)';
+  ctx.fillRect(px,py,3,T);
+  ctx.fillRect(px+T-3,py,3,T);
+}
+
+// ============================================================
+// PLAYER — split into two passes
+// Pass 1: body (legs, torso, arms) — rendered BEFORE grass
+// Pass 2: head + scythe tip — rendered AFTER grass
+// Character is drawn SHIFTED UP so body sits in lower half of
+// tile and head + scythe poke well above the grass canopy.
+// ============================================================
+
+function getPlayerBase(){
+  const bob=Math.sin(tick*0.13)*0.9;
+  // Shift player up by ~0.55*T so grass covers body but head is above
+  return {
+    cx: player.x*T + T*0.5,
+    cy: player.y*T + T*0.55 + bob   // anchor at lower part of tile
+  };
+}
+
+function drawPlayerBody(){
+  const {cx,cy}=getPlayerBase();
+  ctx.save();
+  ctx.translate(cx,cy);
+
+  const inGrass=grid[player.y][player.x].type===TALL;
+  if(!inGrass){
+    ctx.fillStyle='rgba(0,0,0,0.38)';
+    ctx.beginPath();
+    ctx.ellipse(0,T*0.28,T*0.25,T*0.08,0,0,Math.PI*2);
+    ctx.fill();
+  }
+
+  // SHOES
+  ctx.fillStyle='#161616';
+  ctx.fillRect(-T*0.22,T*0.20,T*0.19,T*0.10);
+  ctx.fillRect( T*0.03,T*0.20,T*0.19,T*0.10);
+
+  // LEGS
+  ctx.fillStyle='#1e3ec8';
+  ctx.fillRect(-T*0.20,-T*0.02,T*0.17,T*0.24);
+  ctx.fillRect( T*0.03,-T*0.02,T*0.17,T*0.24);
+  ctx.fillStyle='#2850da';
+  ctx.fillRect(-T*0.18,T*0.00,T*0.06,T*0.20);
+  ctx.fillRect( T*0.05,T*0.00,T*0.06,T*0.20);
+
+  // BODY/JACKET
+  ctx.fillStyle='#1a1a1a';
+  ctx.fillRect(-T*0.24,-T*0.28,T*0.48,T*0.28);
+  ctx.fillStyle='#252525';
+  ctx.fillRect(-T*0.22,-T*0.26,T*0.10,T*0.24);
+  ctx.fillRect( T*0.12,-T*0.26,T*0.10,T*0.24);
+  ctx.fillStyle='#e8c820';
+  ctx.fillRect(-T*0.08,-T*0.27,T*0.16,T*0.26);
+  ctx.fillStyle='#555';
+  ctx.fillRect(-T*0.012,-T*0.26,T*0.024,T*0.24);
+
+  // ARMS
+  const swA=swingAnim?Math.sin(swingAnim.frame*0.38)*1.1:0;
+  const swA2=swingAnim?Math.sin(swingAnim.frame*0.38+0.4)*0.6:0;
+
+  // Right arm
+  ctx.save();
+  ctx.translate(T*0.24,-T*0.18);
+  ctx.rotate(0.28-swA2*0.5);
+  ctx.fillStyle='#1a1a1a';
+  ctx.fillRect(-T*0.01,0,T*0.11,T*0.24);
+  ctx.fillStyle='#c89818';
+  ctx.fillRect(-T*0.02,T*0.20,T*0.14,T*0.10);
+  ctx.restore();
+
+  // Left arm (scythe arm — lower part only, upper/blade drawn in drawPlayerAbove)
+  ctx.save();
+  ctx.translate(-T*0.24,-T*0.18);
+  ctx.rotate(-0.28+swA*0.9);
+  ctx.fillStyle='#1a1a1a';
+  ctx.fillRect(-T*0.10,0,T*0.11,T*0.24);
+  ctx.fillStyle='#c89818';
+  ctx.fillRect(-T*0.11,T*0.20,T*0.14,T*0.10);
+  // scythe handle lower stub (visible below grass)
+  ctx.strokeStyle='#8a5210';
+  ctx.lineWidth=Math.max(3,T*0.058);
+  ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(T*0.02,T*0.12);
+  ctx.lineTo(T*0.06,-T*0.05);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawPlayerAbove(){
+  const {cx,cy}=getPlayerBase();
+  const swA=swingAnim?Math.sin(swingAnim.frame*0.38)*1.1:0;
+  ctx.save();
+  ctx.translate(cx,cy);
+
+  // ---- SCYTHE (upper portion — above grass) ----
+  ctx.save();
+  ctx.translate(-T*0.24,-T*0.18);
+  ctx.rotate(-0.28+swA*0.9);
+  ctx.save();
+  ctx.rotate(swA*0.5);
+
+  // Long handle extending upward past head
+  ctx.strokeStyle='#8a5210';
+  ctx.lineWidth=Math.max(3,T*0.058);
+  ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(T*0.06,-T*0.05);   // top of lower stub
+  ctx.lineTo(T*0.20,-T*1.10);   // extends well above character top
+  ctx.stroke();
+
+  // Larger blade at top
+  ctx.strokeStyle='#d8e2ec';
+  ctx.lineWidth=Math.max(3,T*0.055);
+  ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.arc(T*0.18,-T*1.06,T*0.46,Math.PI*1.00,Math.PI*1.74);
+  ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,0.45)';
+  ctx.lineWidth=Math.max(2,T*0.030);
+  ctx.beginPath();
+  ctx.arc(T*0.18,-T*1.06,T*0.41,Math.PI*1.04,Math.PI*1.70);
+  ctx.stroke();
+  ctx.strokeStyle='rgba(200,230,255,0.55)';
+  ctx.lineWidth=Math.max(1.5,T*0.020);
+  ctx.beginPath();
+  ctx.arc(T*0.18,-T*1.06,T*0.36,Math.PI*1.08,Math.PI*1.66);
+  ctx.stroke();
+
+  // Handle end cap
+  ctx.fillStyle='#5a3208';
+  ctx.beginPath();
+  ctx.arc(T*0.06,T*0.14,T*0.04,0,Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+  ctx.restore();
+
+  // ---- NECK (short, wide) ----
+  ctx.fillStyle='#d4a870';
+  ctx.fillRect(-T*0.10,-T*0.34,T*0.20,T*0.10);
+
+  // ---- BIG HEAD — square jaw, much wider than body ----
+  // Main face shape: wide rectangle + rounded top
+  ctx.fillStyle='#e8c888';
+  // Jaw/lower face — wide square
+  ctx.fillRect(-T*0.32,-T*0.72,T*0.64,T*0.48);
+  // Upper face rounded
+  ctx.beginPath();
+  ctx.arc(0,-T*0.72,T*0.32,Math.PI,Math.PI*2);
+  ctx.fill();
+
+  // Jaw line — extra square at bottom corners
+  ctx.fillRect(-T*0.30,-T*0.36,T*0.60,T*0.14);
+
+  // EARS — big, wide
+  ctx.fillStyle='#d4a860';
+  ctx.fillRect(-T*0.38,-T*0.62,T*0.07,T*0.16);
+  ctx.fillRect( T*0.31,-T*0.62,T*0.07,T*0.16);
+
+  // HEAVY BROW — thick flat unibrow-like, furrowed in middle
+  ctx.fillStyle='#2a1a08';
+  // Left brow — angled down toward center
+  ctx.save();
+  ctx.translate(-T*0.14,-T*0.63);
+  ctx.rotate(0.22);
+  ctx.fillRect(-T*0.13,-T*0.028,T*0.26,T*0.056);
+  ctx.restore();
+  // Right brow — angled down toward center
+  ctx.save();
+  ctx.translate(T*0.14,-T*0.63);
+  ctx.rotate(-0.22);
+  ctx.fillRect(-T*0.13,-T*0.028,T*0.26,T*0.056);
+  ctx.restore();
+  // Brow crease between them
+  ctx.fillStyle='#1a1008';
+  ctx.fillRect(-T*0.04,-T*0.655,T*0.08,T*0.04);
+
+  // EYES — narrow, angry slits under brow
+  ctx.fillStyle='#f5f0e8';
+  ctx.fillRect(-T*0.195,-T*0.595,T*0.155,T*0.065);
+  ctx.fillRect( T*0.040,-T*0.595,T*0.155,T*0.065);
+  // Pupils — dark, beady
+  ctx.fillStyle='#1a1008';
+  ctx.fillRect(-T*0.135,-T*0.590,T*0.075,T*0.055);
+  ctx.fillRect( T*0.060,-T*0.590,T*0.075,T*0.055);
+  // Eye shine
+  ctx.fillStyle='#ffffff';
+  ctx.fillRect(-T*0.125,-T*0.585,T*0.022,T*0.022);
+  ctx.fillRect( T*0.068,-T*0.585,T*0.022,T*0.022);
+  // Upper eyelid shadow (hooded eyes)
+  ctx.fillStyle='rgba(0,0,0,0.35)';
+  ctx.fillRect(-T*0.195,-T*0.595,T*0.155,T*0.028);
+  ctx.fillRect( T*0.040,-T*0.595,T*0.155,T*0.028);
+
+  // GLASSES — rectangular frames, sitting on nose
+  ctx.strokeStyle='#1a1008';
+  ctx.lineWidth=Math.max(1.5, T*0.028);
+  ctx.lineJoin='round';
+  // Left lens
+  ctx.strokeRect(-T*0.210,-T*0.602,T*0.175,T*0.082);
+  // Right lens
+  ctx.strokeRect( T*0.035,-T*0.602,T*0.175,T*0.082);
+  // Bridge between lenses
+  ctx.beginPath();
+  ctx.moveTo(-T*0.035,-T*0.568);
+  ctx.lineTo( T*0.035,-T*0.568);
+  ctx.stroke();
+  // Left arm going to ear
+  ctx.beginPath();
+  ctx.moveTo(-T*0.210,-T*0.568);
+  ctx.lineTo(-T*0.340,-T*0.558);
+  ctx.stroke();
+  // Right arm going to ear
+  ctx.beginPath();
+  ctx.moveTo( T*0.210,-T*0.568);
+  ctx.lineTo( T*0.340,-T*0.558);
+  ctx.stroke();
+
+  // NOSE — wide, prominent
+  ctx.fillStyle='#c8a050';
+  // Bridge
+  ctx.fillRect(-T*0.030,-T*0.580,T*0.060,T*0.090);
+  // Nostrils — wide ball at bottom
+  ctx.beginPath();
+  ctx.ellipse(-T*0.048,-T*0.490,T*0.052,T*0.038,0,0,Math.PI*2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse( T*0.048,-T*0.490,T*0.052,T*0.038,0,0,Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle='#a88038';
+  ctx.fillRect(-T*0.028,-T*0.508,T*0.020,T*0.024);
+  ctx.fillRect( T*0.008,-T*0.508,T*0.020,T*0.024);
+
+  // MOUTH — flat grimace / frown, lips prominent
+  // Upper lip
+  ctx.fillStyle='#b07840';
+  ctx.fillRect(-T*0.18,-T*0.432,T*0.36,T*0.028);
+  // Lower lip — fuller, pouty
+  ctx.fillStyle='#c89050';
+  ctx.beginPath();
+  ctx.ellipse(0,-T*0.395,T*0.175,T*0.048,0,0,Math.PI*2);
+  ctx.fill();
+  // Mouth line — downturned at corners
+  ctx.strokeStyle='#7a5020';
+  ctx.lineWidth=Math.max(1.5,T*0.026);
+  ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(-T*0.180,-T*0.430);
+  ctx.quadraticCurveTo(-T*0.195,-T*0.415,-T*0.170,-T*0.400);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo( T*0.180,-T*0.430);
+  ctx.quadraticCurveTo( T*0.195,-T*0.415, T*0.170,-T*0.400);
+  ctx.stroke();
+  // Center mouth crease
+  ctx.beginPath();
+  ctx.moveTo(-T*0.180,-T*0.430);
+  ctx.lineTo( T*0.180,-T*0.430);
+  ctx.stroke();
+
+  // CHIN CLEFT
+  ctx.fillStyle='#c4a060';
+  ctx.fillRect(-T*0.018,-T*0.260,T*0.036,T*0.038);
+
+  // ===== RED CAP — big to match big head =====
+  // Brim — wide
+  ctx.fillStyle='#0d0d0d';
+  ctx.beginPath();
+  ctx.ellipse(T*0.06,-T*0.745,T*0.360,T*0.085,-0.06,0,Math.PI*2);
+  ctx.fill();
+  // Dome
+  ctx.fillStyle='#cc1010';
+  ctx.beginPath();
+  ctx.arc(0,-T*0.770,T*0.295,Math.PI,Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle='#e02020';
+  ctx.beginPath();
+  ctx.arc(-T*0.06,-T*0.800,T*0.170,Math.PI,Math.PI*2);
+  ctx.fill();
+  // Top button
+  ctx.fillStyle='#ddd';
+  ctx.beginPath();
+  ctx.arc(0,-T*1.062,T*0.032,0,Math.PI*2);
+  ctx.fill();
+  // Logo — simple white rectangle
+  ctx.fillStyle='#ffffff';
+  ctx.fillRect(-T*0.045,-T*0.900,T*0.090,T*0.058);
+  ctx.fillStyle='#cc1010';
+  ctx.fillRect(-T*0.030,-T*0.892,T*0.060,T*0.040);
+  // Brim underside shadow
+  ctx.fillStyle='#080808';
+  ctx.beginPath();
+  ctx.ellipse(T*0.06,-T*0.720,T*0.305,T*0.048,-0.06,0,Math.PI);
+  ctx.fill();
+
+  ctx.restore();
+
+  if(swingAnim){swingAnim.frame++;if(swingAnim.frame>14)swingAnim=null;}
+}
+
+// ---- PARTICLES ----
+function drawParticles(){
+  particles=particles.filter(p=>p.life>0);
+  particles.forEach(p=>{
+    ctx.save();
+    ctx.globalAlpha=p.life/p.maxLife;
+    ctx.fillStyle=p.color;
+    const s=p.size*(p.life/p.maxLife);
+    ctx.fillRect(p.x-s/2,p.y-s/2,s,s);
+    p.x+=p.vx;p.y+=p.vy;p.vy+=0.12;p.life--;
+    ctx.restore();
+  });
+}
+
+function spawnGrass(x,y){
+  const px=x*T+T/2,py=y*T+T*0.3;
+  const c=['#3da83d','#2d7a2d','#5ecf5e','#1a5c1a','#4cc44c','#28a028'];
+  for(let i=0;i<10;i++) particles.push({
+    x:px+(Math.random()-0.5)*T*0.9,y:py-(Math.random()*T*0.3),
+    vx:(Math.random()-0.5)*3.8,vy:-Math.random()*5-1.5,
+    color:c[Math.floor(Math.random()*c.length)],
+    size:2+Math.random()*5,life:18+Math.random()*10,maxLife:28
+  });
+}
+
+function spawnGem(x,y,type){
+  const px=x*T+T/2,py=y*T+T/2;
+  const col=type===DIAMOND?'#a8efff':'#ff2060';
+  const col2=type===DIAMOND?'#ffffff':'#ff80b0';
+  const count=type===DIAMOND?36:20;
+  for(let i=0;i<count;i++){
+    const a=(i/count)*Math.PI*2;
+    const spd=type===DIAMOND?3.5+Math.random()*4:2+Math.random()*3;
+    particles.push({
+      x:px,y:py,
+      vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,
+      color:i%3===0?col2:col,
+      size:i%3===0?(type===DIAMOND?9:6):2+Math.random()*4,
+      life:35+Math.random()*20,maxLife:55
+    });
+  }
+}
+
+// ---- HUD ----
+function updateHUD(){
+  document.getElementById('cuts-val').textContent=cuts;
+  document.getElementById('ruby-val').textContent=rubies;
+  document.getElementById('diamond-val').textContent=diamonds;
+  document.getElementById('round-val').textContent=round;
+  const pct=Math.min(100,(cuts/maxCuts)*100);
+  const bar=document.getElementById('cuts-bar-fill');
+  bar.style.width=pct+'%';
+  bar.className='cuts-fill'+(cuts<=6?' low':'');
+}
+function setMsg(m){document.getElementById('msg-log').innerHTML=m;}
+
+// ---- MOVEMENT — walking picks up gems on CUT ground ----
+function tryMove(dx,dy){
+  if(!gameActive) return;
+  const nx=player.x+dx,ny=player.y+dy;
+  if(nx<0||nx>=COLS||ny<0||ny>=ROWS) return;
+  player.x=nx;player.y=ny;
+  playSound('move');
+  if(dx===1)       player.facing='right';
+  else if(dx===-1) player.facing='left';
+  else if(dy===1)  player.facing='down';
+  else             player.facing='up';
+
+  const cell=grid[ny][nx];
+  if(cell.type===TALL){
+    setMsg("Tall grass! Press <span style='color:#ff8040'>⚔ CUT</span> to slash all 9 tiles!");
+  } else {
+    if(cell.item===RUBY){
+      collectRuby(nx,ny);
+    } else if(cell.item===DIAMOND){
+      collectDiamond(nx,ny);
+    } else {
+      setMsg('Open ground — move into the grass!');
+    }
+  }
+  // If out of cuts and nothing collectable left, end game
+  if(cuts<=0) checkGameOver();
+}
+
+function collectRuby(x,y){
+  const cell=grid[y][x];
+  cell.item=NONE;
+  spawnGem(x,y,RUBY);
+  cuts++;  // no cap — stack away!
+  rubies++;
+  playSound('ruby');
+  setMsg(`🔴 <span style="color:#ff5090">RUBY collected!</span> +1 cut!`);
+  if(cuts<=0) checkGameOver();
+}
+
+function collectDiamond(x,y){
+  const cell=grid[y][x];
+  cell.item=NONE;
+  spawnGem(x,y,DIAMOND);
+  diamonds++;
+  playSound('diamond');
+  setMsg(`💎 <span style="color:#a8efff">DIAMOND FOUND!</span> Round ${round} cleared!`);
+  gameActive=false;
+  setTimeout(()=>nextRound(),2200);
+}
+
+// Returns true if any collectable item (ruby OR diamond) is on revealed ground
+function itemOnGround(){
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++)
+    if(grid[y][x].type===CUT_CELL && grid[y][x].item!==NONE) return true;
+  return false;
+}
+
+function checkGameOver(){
+  if(cuts<=0 && !itemOnGround()) setTimeout(endGame,900);
+  else if(cuts<=0) setMsg('0 cuts left — <span style="color:#ffd700">walk to the glowing item to survive!</span>');
+}
+
+// ---- CUT: clears 3x3 (does NOT auto-collect items — reveals them on ground) ----
+function doCut(){
+  if(!gameActive) return;
+  if(cuts<=0){
+    if(itemOnGround()) setMsg('0 cuts — <span style="color:#ffd700">walk to the glowing item!</span>');
+    else endGame();
+    return;
+  }
+
+  const targets=[];
+  const radius=round>=8?3:round>=4?2:1;  // 7x7 from round 8, 5x5 from round 4, 3x3 before
+  for(let dy=-radius;dy<=radius;dy++) for(let dx=-radius;dx<=radius;dx++){
+    const tx=player.x+dx,ty=player.y+dy;
+    if(tx>=0&&tx<COLS&&ty>=0&&ty<ROWS) targets.push({x:tx,y:ty});
+  }
+
+  let cutAny=false;
+  let revealedItems=0;
+
+  targets.forEach(t=>{
+    const c=grid[t.y][t.x];
+    if(c.type===TALL){
+      c.type=CUT_CELL;
+      cutAny=true;
+      spawnGrass(t.x,t.y);
+      // Item stays on the cell — player must walk to it!
+      if(c.item!==NONE) revealedItems++;
+    }
+  });
+
+  swingAnim={frame:0};
+  sweepFlash=12;
+  sweepRadius=round>=8?3:round>=4?2:1;
+  playSound('cut');
+
+  if(cutAny){
+    cuts--;
+    if(revealedItems>0){
+      setMsg(`Swish! <span style="color:#ffd700">Something glints in the grass!</span> Walk to it!`);
+    } else {
+      setMsg('Whoosh! Nothing here... keep searching.');
+    }
+    checkGameOver();
+  } else {
+    setMsg('Already cleared! Move into the tall grass first.');
+  }
+}
+
+// ---- ROUND / GAME FLOW ----
+function getRubyCount(r){const c=[26,22,18,15,12,8,5,3,2];return Math.max(2,c[Math.min(r-1,c.length-1)]);}
+
+function nextRound(){
+  round++;
+  // cuts carry over — no reset
+  // rubies decrease each round (handled in initGrid)
+  const o=document.getElementById('overlay');
+  o.innerHTML=`
+    <div class="ot2">💎 DIAMOND FOUND! 💎</div>
+    <div class="os" style="color:#a8efff">Round ${round-1} Complete!</div>
+    <div class="ostat">
+      <span style="color:#e8003d">Total Rubies: ${rubies}</span><br>
+      <span style="color:#a8efff">Diamonds: ${diamonds}</span><br>
+      Cuts remaining: <span style="color:#7fff7f">${cuts}</span>
+    </div>
+    <div class="os" style="font-size:17px;color:#c0a040;">
+      Round ${round} — ${getRubyCount(round)} rubies hidden
+    </div>
+    ${round===4 ? `<div style="background:linear-gradient(135deg,#1a1a2e,#2a2a50);border:2px solid #c8d8f0;border-radius:8px;padding:12px 18px;text-align:center;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#c8e0ff;text-shadow:0 0 14px rgba(180,210,255,0.9);margin-bottom:8px;">⚔ SCYTHE UPGRADED! ⚔</div>
+      <div style="font-family:'VT323',monospace;font-size:19px;color:#e8eef4;">Blade now cuts a 5×5 area!<br>25 tiles cleared per swing!</div>
+    </div>` : round===8 ? `<div style="background:linear-gradient(135deg,#2a1a00,#4a3200);border:2px solid #ffd700;border-radius:8px;padding:12px 18px;text-align:center;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffd700;text-shadow:0 0 16px rgba(255,215,0,1),0 0 30px rgba(255,180,0,0.7);margin-bottom:8px;">⚔ SCYTHE MASTERED! ⚔</div>
+      <div style="font-family:'VT323',monospace;font-size:19px;color:#ffe88a;">Blade now cuts a 7×7 area!<br>49 tiles cleared per swing!</div>
+    </div>` : ''}
+    <button id="play-btn" onclick="startRound()">▶ ROUND ${round}</button>
+  `;
+  o.classList.remove('hidden');
+}
+
+function startRound(){
+  const g=getGridSize();
+  COLS=g.cols;ROWS=g.rows;T=g.ts;
+  canvas.width=g.w;canvas.height=g.h;
+  particles=[];swingAnim=null;sweepFlash=0;tick=0;
+  gameActive=true;
+  initGrid();
+  if(round===4){
+    showUpgradeBanner('silver');
+    playSound('upgrade');
+    setTimeout(()=>setMsg('Find the diamond! 💎 Scythe now cuts 5×5!'),2200);
+  } else if(round===8){
+    showUpgradeBanner('gold');
+    playSound('upgrade');
+    setTimeout(()=>setMsg('Find the diamond! 💎 Scythe now cuts 7×7!'),2200);
+  } else {
+    setMsg(`Round ${round} — Find the diamond! 💎`);
+  }
+  document.getElementById('overlay').classList.add('hidden');
+  if(window._bgCanvas) window._bgCanvas.hide();
+  if(!looping){looping=true;requestAnimationFrame(loop);}
+}
+
+function endGame(){
+  gameActive=false;
+  looping=false;
+  playSound('gameover');
+  if(window._bgCanvas) window._bgCanvas.show();
+  const o=document.getElementById('overlay');
+  o.innerHTML=`
+    <div class="ot">💎 DIAMOND IN THE ROUGH 💎</div>
+    <div class="ot2" style="color:#ff4040">GAME OVER</div>
+    <div class="ostat" style="margin:4px 0;">
+      Rounds: <span style="color:#ffaa30">${round}</span> &nbsp;
+      <span style="color:#a8efff">💎 ${diamonds}</span>
+    </div>
+    <div id="lb-area" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:10px;">
+      <div class="lb-empty" style="font-size:14px;color:#8a7040;">Loading leaderboard...</div>
+    </div>
+    <button id="play-btn" onclick="startGame(1)">▶ PLAY AGAIN</button>
+  `;
+  o.classList.remove('hidden');
+  initLeaderboardUI(diamonds);
+}
+
+async function initLeaderboardUI(playerDiamonds){
+  const area = document.getElementById('lb-area');
+  if(!area) return;
+
+  const lb = window._lb;
+  // No Firebase configured — show offline stub
+  if(!lb){
+    area.innerHTML=renderLBTable([]);
+    return;
+  }
+
+  const entries = await lb.getLeaderboard();
+  const lowestScore = entries.length < 10 ? -1 : entries[entries.length-1].diamonds;
+  const qualifies = playerDiamonds > 0 && (entries.length < 10 || playerDiamonds > lowestScore);
+
+  if(qualifies){
+    area.innerHTML=`
+      <div style="font-family:'VT323',monospace;font-size:18px;color:#ffd700;text-align:center;">
+        🏆 You made the Top 10!<br>
+        <span style="font-size:15px;color:#a8efff;">💎 ${playerDiamonds} diamond${playerDiamonds!==1?'s':''}</span>
+      </div>
+      <div id="lb-name-form">
+        <input id="lb-name-input" maxlength="16" placeholder="Enter your name" autocomplete="off" spellcheck="false"/>
+        <button id="lb-submit-btn" onclick="submitLBScore(${playerDiamonds})">SUBMIT</button>
+      </div>
+      <div id="lb-table-wrap">${renderLBTable(entries)}</div>
+    `;
+    setTimeout(()=>{
+      const inp=document.getElementById('lb-name-input');
+      if(inp) inp.focus();
+    },300);
+  } else {
+    area.innerHTML=renderLBTable(entries);
+  }
+}
+
+async function submitLBScore(playerDiamonds){
+  const inp = document.getElementById('lb-name-input');
+  const name = inp ? inp.value.trim() : '';
+  if(!name){ inp&&(inp.style.borderColor='#ff4040'); return; }
+  const btn = document.getElementById('lb-submit-btn');
+  if(btn){ btn.textContent='SAVING...'; btn.disabled=true; }
+
+  const lb = window._lb;
+  if(lb){
+    await lb.trySubmitScore(name, playerDiamonds);
+    const updated = await lb.getLeaderboard();
+    const wrap = document.getElementById('lb-table-wrap');
+    if(wrap) wrap.innerHTML=renderLBTable(updated);
+    // Hide form, show thanks
+    const form = document.getElementById('lb-name-form');
+    if(form) form.innerHTML=`<div style="font-family:'VT323',monospace;font-size:16px;color:#7fff7f;">✓ Score saved!</div>`;
+  }
+}
+
+function renderLBTable(entries){
+  const rankColors=['gold','silver','bronze'];
+  const rankSymbols=['🥇','🥈','🥉'];
+  if(!entries||entries.length===0){
+    return `<div id="lb-panel"><h2>🏆 LEADERBOARD</h2><div class="lb-empty">No scores yet — be the first!</div></div>`;
+  }
+  const rows = entries.map((e,i)=>`
+    <div class="lb-row">
+      <div class="lb-rank ${rankColors[i]||''}">${rankSymbols[i]||('#'+(i+1))}</div>
+      <div class="lb-name">${e.name||'???'}</div>
+      <div class="lb-diamonds">💎 ${e.diamonds}</div>
+    </div>`).join('');
+  return `<div id="lb-panel"><h2>🏆 LEADERBOARD</h2>${rows}</div>`;
+}
+
+function startGame(r){
+  round=r||1;
+  maxCuts=30;
+  rubies=0;diamonds=0;
+  const g=getGridSize();
+  COLS=g.cols;ROWS=g.rows;T=g.ts;
+  canvas.width=g.w;canvas.height=g.h;
+  cuts=maxCuts;
+  particles=[];swingAnim=null;sweepFlash=0;tick=0;
+  gameActive=true;
+  initGrid();
+  setMsg('Find the diamond! 💎 30 cuts, 26 rubies — stack them up!');
+  document.getElementById('overlay').classList.add('hidden');
+  if(window._bgCanvas) window._bgCanvas.hide();
+  if(!looping){looping=true;requestAnimationFrame(loop);}
+}
+
+let looping=false;
+
+function showUpgradeBanner(tint){
+  const isGold=tint==='gold';
+  const ban=document.createElement('div');
+  ban.id='upgrade-banner';
+  ban.style.cssText=`
+    position:fixed;inset:0;z-index:50;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:12px;pointer-events:none;
+    background:${isGold?'rgba(200,160,20,0.0)':'rgba(160,185,210,0.0)'};
+    animation:${isGold?'upgradeFadeGold':'upgradeFade'} 2.0s ease-out forwards;
+  `;
+  const titleColor   = isGold ? '#ffd700' : '#e8eef4';
+  const titleShadow  = isGold
+    ? '0 0 18px rgba(255,215,0,1),0 0 36px rgba(255,180,0,0.9),0 0 60px rgba(200,140,0,0.6)'
+    : '0 0 18px rgba(220,235,255,1),0 0 36px rgba(180,210,255,0.9),0 0 60px rgba(140,180,255,0.6)';
+  const subColor     = isGold ? '#ffe88a' : '#e8eef4';
+  const titleText    = isGold ? '⚔ SCYTHE<br>MASTERED! ⚔' : '⚔ SCYTHE<br>UPGRADED! ⚔';
+  const subText      = isGold ? 'Now cuts 7×7 — 49 tiles per swing!' : 'Now cuts 5×5 — 25 tiles per swing!';
+  ban.innerHTML=`
+    <div style="
+      font-family:'Press Start 2P',monospace;
+      font-size:clamp(14px,4vw,22px);
+      color:${titleColor};
+      text-shadow:${titleShadow};
+      text-align:center;line-height:1.6;
+      animation:upgradeScale 0.4s ease-out;
+    ">${titleText}</div>
+    <div style="
+      font-family:'VT323',monospace;font-size:clamp(18px,5vw,26px);
+      color:${subColor};text-shadow:0 0 10px ${isGold?'rgba(255,215,0,0.8)':'rgba(220,235,255,0.8)'};
+      text-align:center;
+    ">${subText}</div>
+  `;
+  document.body.appendChild(ban);
+  setTimeout(()=>{ const b=document.getElementById('upgrade-banner'); if(b)b.remove(); },2100);
+}
+
+function loop(){
+  tick++;
+  drawAll();
+  if(looping) requestAnimationFrame(loop);
+}
+
+// ---- INPUT ----
+document.addEventListener('keydown',e=>{
+  if(!gameActive) return;
+  const k=e.key;
+  if(k==='ArrowUp'||k==='w'||k==='W')         {tryMove(0,-1);e.preventDefault();}
+  else if(k==='ArrowDown'||k==='s'||k==='S')  {tryMove(0,1); e.preventDefault();}
+  else if(k==='ArrowLeft'||k==='a'||k==='A')  {tryMove(-1,0);e.preventDefault();}
+  else if(k==='ArrowRight'||k==='d'||k==='D') {tryMove(1,0); e.preventDefault();}
+  else if(k==='x'||k==='X'||k===' ')          {doCut();      e.preventDefault();}
+});
+
+document.querySelectorAll('.dpad-btn').forEach(btn=>{
+  const dir=btn.dataset.dir;
+  const go=()=>{
+    if(dir==='up')    tryMove(0,-1);
+    else if(dir==='down')  tryMove(0,1);
+    else if(dir==='left')  tryMove(-1,0);
+    else               tryMove(1,0);
+  };
+  btn.addEventListener('touchstart',e=>{e.preventDefault();btn.classList.add('pressed');go();},{passive:false});
+  btn.addEventListener('touchend',()=>btn.classList.remove('pressed'));
+  btn.addEventListener('mousedown',go);
+});
+
+const cutBtn=document.getElementById('cut-btn');
+cutBtn.addEventListener('touchstart',e=>{e.preventDefault();cutBtn.classList.add('pressed');doCut();},{passive:false});
+cutBtn.addEventListener('touchend',()=>cutBtn.classList.remove('pressed'));
+cutBtn.addEventListener('mousedown',doCut);
+
+let ts=null;
+canvas.addEventListener('touchstart',e=>{ts={x:e.touches[0].clientX,y:e.touches[0].clientY};},{passive:true});
+canvas.addEventListener('touchend',e=>{
+  if(!ts) return;
+  const dx=e.changedTouches[0].clientX-ts.x,dy=e.changedTouches[0].clientY-ts.y;
+  if(Math.max(Math.abs(dx),Math.abs(dy))<20){ts=null;return;}
+  if(Math.abs(dx)>Math.abs(dy)) tryMove(dx>0?1:-1,0);
+  else tryMove(0,dy>0?1:-1);
+  ts=null;
+},{passive:true});
+
+// Size canvas once DOM is ready
+window.addEventListener('load',()=>{
+  const g=getGridSize();canvas.width=g.w;canvas.height=g.h;
+});
+
+// ═══════════════════════════════════════════════════════════
+// ANIMATED START-SCREEN BACKGROUND
+// ═══════════════════════════════════════════════════════════
+(function(){
+  const bgCanvas = document.getElementById('bg-canvas');
+  const bgCtx    = bgCanvas.getContext('2d');
+  let bgTick = 0, bgRAF = null;
+
+  function resizeBg(){
+    bgCanvas.width  = window.innerWidth;
+    bgCanvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resizeBg);
+  resizeBg();
+
+  // Firefly particles drifting up through dark grass
+  const BLADES = 120;
+  const blades = Array.from({length:BLADES},()=>({
+    x: Math.random(),
+    h: 0.15 + Math.random()*0.35,
+    sway: Math.random()*Math.PI*2,
+    spd: 0.004 + Math.random()*0.006,
+    w: 0.003 + Math.random()*0.005,
+    shade: Math.floor(Math.random()*4),
+  }));
+  const GC2=[
+    ['#0d2e0b','#155214','#1e7a1c'],
+    ['#103515','#196b1a','#249f22'],
+    ['#0e3210','#1a6018','#259c1e'],
+    ['#122e0e','#1c5816','#2a8c20'],
+  ];
+  const FLIES = 28;
+  const flies = Array.from({length:FLIES},()=>({
+    x: Math.random(),
+    y: 0.3 + Math.random()*0.6,
+    vx:(Math.random()-0.5)*0.0004,
+    vy:-0.0002 - Math.random()*0.0003,
+    phase: Math.random()*Math.PI*2,
+    pspd: 0.04 + Math.random()*0.04,
+    size: 1.5 + Math.random()*2.5,
+    col: Math.random()<0.55 ? '#a8ffb0' : Math.random()<0.6 ? '#ffffa0' : '#a8efff',
+  }));
+
+  function drawBg(){
+    const W = bgCanvas.width, H = bgCanvas.height;
+    bgCtx.clearRect(0,0,W,H);
+
+    // Sky gradient
+    const sky = bgCtx.createLinearGradient(0,0,0,H);
+    sky.addColorStop(0,'#020604');
+    sky.addColorStop(0.5,'#060e08');
+    sky.addColorStop(1,'#0a1a0c');
+    bgCtx.fillStyle = sky;
+    bgCtx.fillRect(0,0,W,H);
+
+    // Moon
+    bgCtx.save();
+    bgCtx.shadowColor='rgba(200,240,200,0.5)';
+    bgCtx.shadowBlur=30;
+    bgCtx.fillStyle='#d8f0c8';
+    bgCtx.beginPath();
+    bgCtx.arc(W*0.78, H*0.14, W*0.045, 0, Math.PI*2);
+    bgCtx.fill();
+    bgCtx.restore();
+
+    // Stars
+    bgCtx.fillStyle='rgba(220,240,220,0.7)';
+    for(let i=0;i<60;i++){
+      const sx=((i*137.5)%1)*W, sy=((i*97.3)%0.45)*H;
+      const pulse=0.4+0.6*Math.abs(Math.sin(bgTick*0.012+i));
+      bgCtx.globalAlpha=pulse*0.8;
+      bgCtx.fillRect(sx,sy,1+(i%3===0?1:0),1+(i%5===0?1:0));
+    }
+    bgCtx.globalAlpha=1;
+
+    // Grass blades
+    const baseY = H * 0.88;
+    blades.forEach(b=>{
+      const sw = Math.sin(bgTick*b.spd+b.sway)*0.06;
+      const bx = b.x * W;
+      const bh = b.h * H;
+      const bw = b.w * W;
+      const cols = GC2[b.shade];
+      bgCtx.fillStyle = cols[1];
+      bgCtx.beginPath();
+      bgCtx.moveTo(bx-bw,baseY);
+      bgCtx.quadraticCurveTo(bx+sw*bh*0.4,baseY-bh*0.5, bx+sw*bh, baseY-bh);
+      bgCtx.quadraticCurveTo(bx+sw*bh*0.4+bw,baseY-bh*0.5, bx+bw, baseY);
+      bgCtx.fill();
+      bgCtx.fillStyle = cols[2];
+      bgCtx.beginPath();
+      bgCtx.moveTo(bx-bw*0.15,baseY);
+      bgCtx.quadraticCurveTo(bx+sw*bh*0.35,baseY-bh*0.52, bx+sw*bh, baseY-bh);
+      bgCtx.lineTo(bx+sw*bh-bw*0.2,baseY-bh+3);
+      bgCtx.quadraticCurveTo(bx+sw*bh*0.3,baseY-bh*0.46, bx+bw*0.2,baseY);
+      bgCtx.fill();
+    });
+
+    // Ground strip
+    const gnd = bgCtx.createLinearGradient(0,baseY,0,H);
+    gnd.addColorStop(0,'#163d13');
+    gnd.addColorStop(1,'#0a2009');
+    bgCtx.fillStyle=gnd;
+    bgCtx.fillRect(0,baseY,W,H-baseY);
+
+    // Fireflies
+    flies.forEach(f=>{
+      f.x += f.vx; f.y += f.vy;
+      if(f.x<0) f.x=1; if(f.x>1) f.x=0;
+      if(f.y<0.05){ f.y=0.3+Math.random()*0.55; f.x=Math.random(); }
+      const pulse = 0.35 + 0.65*Math.abs(Math.sin(bgTick*f.pspd+f.phase));
+      const fx = f.x*W, fy = f.y*H;
+      bgCtx.save();
+      bgCtx.globalAlpha = pulse * 0.9;
+      bgCtx.shadowColor = f.col;
+      bgCtx.shadowBlur  = 12 * pulse;
+      bgCtx.fillStyle   = f.col;
+      bgCtx.beginPath();
+      bgCtx.arc(fx,fy,f.size*pulse,0,Math.PI*2);
+      bgCtx.fill();
+      bgCtx.restore();
+    });
+
+    bgTick++;
+  }
+
+  function bgLoop(){
+    drawBg();
+    bgRAF = requestAnimationFrame(bgLoop);
+  }
+
+  // Start immediately
+  bgLoop();
+
+  // Expose controls for game code
+  window._bgCanvas = {
+    hide(){ bgCanvas.classList.add('hidden'); },
+    show(){ bgCanvas.classList.remove('hidden'); },
+    stop(){ if(bgRAF){ cancelAnimationFrame(bgRAF); bgRAF=null; } },
+  };
+})();
+
+
+let audioCtx=null;
+let soundOn=true;
+
+function getAudio(){
+  if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==='suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playSound(type){
+  if(!soundOn) return;
+  try{
+    const ac=getAudio();
+    const now=ac.currentTime;
+
+    if(type==='cut'){
+      // Grass swish — filtered noise burst
+      const buf=ac.createBuffer(1,ac.sampleRate*0.18,ac.sampleRate);
+      const d=buf.getChannelData(0);
+      for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,1.5);
+      const src=ac.createBufferSource();
+      src.buffer=buf;
+      const filt=ac.createBiquadFilter();
+      filt.type='bandpass';filt.frequency.value=1800;filt.Q.value=0.8;
+      const gain=ac.createGain();
+      gain.gain.setValueAtTime(0.55,now);
+      gain.gain.exponentialRampToValueAtTime(0.001,now+0.18);
+      src.connect(filt);filt.connect(gain);gain.connect(ac.destination);
+      src.start(now);
+
+    } else if(type==='ruby'){
+      // Bright sparkle ding
+      [880,1320,1760].forEach((freq,i)=>{
+        const osc=ac.createOscillator();
+        const gain=ac.createGain();
+        osc.type='sine';
+        osc.frequency.setValueAtTime(freq,now+i*0.06);
+        gain.gain.setValueAtTime(0,now+i*0.06);
+        gain.gain.linearRampToValueAtTime(0.28,now+i*0.06+0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001,now+i*0.06+0.22);
+        osc.connect(gain);gain.connect(ac.destination);
+        osc.start(now+i*0.06);osc.stop(now+i*0.06+0.25);
+      });
+
+    } else if(type==='diamond'){
+      // Big triumphant chord + shimmer
+      [523,659,784,1047].forEach((freq,i)=>{
+        const osc=ac.createOscillator();
+        const gain=ac.createGain();
+        osc.type=i<2?'triangle':'sine';
+        osc.frequency.setValueAtTime(freq,now);
+        gain.gain.setValueAtTime(0.0,now);
+        gain.gain.linearRampToValueAtTime(0.32,now+0.04);
+        gain.gain.exponentialRampToValueAtTime(0.001,now+1.2);
+        osc.connect(gain);gain.connect(ac.destination);
+        osc.start(now);osc.stop(now+1.3);
+      });
+      // High shimmer on top
+      const osc2=ac.createOscillator();
+      const g2=ac.createGain();
+      osc2.type='sine';
+      osc2.frequency.setValueAtTime(2093,now+0.1);
+      osc2.frequency.linearRampToValueAtTime(2637,now+0.5);
+      g2.gain.setValueAtTime(0.18,now+0.1);
+      g2.gain.exponentialRampToValueAtTime(0.001,now+0.8);
+      osc2.connect(g2);g2.connect(ac.destination);
+      osc2.start(now+0.1);osc2.stop(now+0.9);
+
+    } else if(type==='move'){
+      // Very soft footstep thud
+      const osc=ac.createOscillator();
+      const gain=ac.createGain();
+      osc.type='sine';
+      osc.frequency.setValueAtTime(120,now);
+      osc.frequency.exponentialRampToValueAtTime(60,now+0.08);
+      gain.gain.setValueAtTime(0.18,now);
+      gain.gain.exponentialRampToValueAtTime(0.001,now+0.09);
+      osc.connect(gain);gain.connect(ac.destination);
+      osc.start(now);osc.stop(now+0.1);
+
+    } else if(type==='gameover'){
+      // Descending sad tones
+      [392,349,330,294].forEach((freq,i)=>{
+        const osc=ac.createOscillator();
+        const gain=ac.createGain();
+        osc.type='triangle';
+        osc.frequency.setValueAtTime(freq,now+i*0.22);
+        gain.gain.setValueAtTime(0.28,now+i*0.22);
+        gain.gain.exponentialRampToValueAtTime(0.001,now+i*0.22+0.30);
+        osc.connect(gain);gain.connect(ac.destination);
+        osc.start(now+i*0.22);osc.stop(now+i*0.22+0.32);
+      });
+
+    } else if(type==='upgrade'){
+      // Rising power-up sweep
+      const osc=ac.createOscillator();
+      const gain=ac.createGain();
+      osc.type='sawtooth';
+      osc.frequency.setValueAtTime(220,now);
+      osc.frequency.exponentialRampToValueAtTime(880,now+0.35);
+      gain.gain.setValueAtTime(0.22,now);
+      gain.gain.exponentialRampToValueAtTime(0.001,now+0.45);
+      osc.connect(gain);gain.connect(ac.destination);
+      osc.start(now);osc.stop(now+0.5);
+      // Second hit
+      const osc2=ac.createOscillator();
+      const g2=ac.createGain();
+      osc2.type='sine';
+      osc2.frequency.setValueAtTime(1320,now+0.3);
+      g2.gain.setValueAtTime(0.25,now+0.3);
+      g2.gain.exponentialRampToValueAtTime(0.001,now+0.7);
+      osc2.connect(g2);g2.connect(ac.destination);
+      osc2.start(now+0.3);osc2.stop(now+0.75);
+    }
+  } catch(e){}
+}
+
+// Sound toggle button
+document.getElementById('sound-btn').addEventListener('click',()=>{
+  soundOn=!soundOn;
+  const btn=document.getElementById('sound-btn');
+  btn.textContent=soundOn?'🔊':'🔇';
+  btn.classList.toggle('muted',!soundOn);
+});
+document.getElementById('sound-btn').addEventListener('touchstart',e=>{
+  e.preventDefault();
+  soundOn=!soundOn;
+  const btn=document.getElementById('sound-btn');
+  btn.textContent=soundOn?'🔊':'🔇';
+  btn.classList.toggle('muted',!soundOn);
+},{passive:false});
+
+</script>
+</body>
+</html>
