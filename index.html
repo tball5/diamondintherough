@@ -327,7 +327,7 @@
   <div class="os">Move with d-pad. Tap ⚔ CUT to slash 9 tiles!<br>Walk onto revealed items to collect.</div>
   <div class="os" style="font-size:14px;color:#706040;line-height:1.8;">
     💎 Find the 1 diamond to advance<br>
-    🔴 26 rubies in round 1 — collect for +1 cut<br>
+    🔴 22 rubies in round 1 — collect for +1 cut<br>
     Start with 30 cuts — stack them up!<br>
     ⚔ Scythe upgrades: 5×5 at round 4, 7×7 at round 8!
   </div>
@@ -430,7 +430,7 @@ function initGrid(){
   const idx=Array.from({length:total},(_,i)=>i);
   for(let i=idx.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[idx[i],idx[j]]=[idx[j],idx[i]];}
   const dIdx=idx[0];
-  const rubyCurve=[26,22,18,15,12,8,5,3,2];
+  const rubyCurve=[22,20,18,15,12,8,5,3,2];
   const rubyCount=Math.max(2,rubyCurve[Math.min(round-1,rubyCurve.length-1)]);
   const rSet=new Set(idx.slice(1,1+rubyCount));
 
@@ -1093,7 +1093,7 @@ function doCut(){
 }
 
 // ---- ROUND / GAME FLOW ----
-function getRubyCount(r){const c=[26,22,18,15,12,8,5,3,2];return Math.max(2,c[Math.min(r-1,c.length-1)]);}
+function getRubyCount(r){const c=[22,20,18,15,12,8,5,3,2];return Math.max(2,c[Math.min(r-1,c.length-1)]);}
 
 function nextRound(){
   round++;
@@ -1249,7 +1249,7 @@ function startGame(r){
   particles=[];swingAnim=null;sweepFlash=0;tick=0;
   gameActive=true;
   initGrid();
-  setMsg('Find the diamond! 💎 30 cuts, 26 rubies — stack them up!');
+  setMsg('Find the diamond! 💎 30 cuts, 22 rubies — stack them up!');
   document.getElementById('overlay').classList.add('hidden');
   if(window._bgCanvas) window._bgCanvas.hide();
   if(!looping){looping=true;requestAnimationFrame(loop);}
